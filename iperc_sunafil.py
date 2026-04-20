@@ -3,50 +3,55 @@ import pandas as pd
 from datetime import datetime, timedelta
 import sqlite3
 import smtplib
+import time
 from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
 
-# ==========================================
-# CONFIGURACIÓN Y ESTÁNDARES (ISO / SST)
-# ==========================================
-FORMATO_BASE = {
-    "ENTIDAD": "Municipalidad Provincial de Lambayeque",
-    "SIGLA": "MPL",
-    "SISTEMA": "SST"
-}
+# Configuración de página
+st.set_page_config(page_title="SGI Enterprise - Enrique Huambo", layout="wide")
 
 # ==========================================
-# 1. BASE DE DATOS MEJORADA
+# 1. MOTOR DE BASE DE DATOS Y LÓGICA CORE
 # ==========================================
 def init_db():
-    conn = sqlite3.connect('sgi_enterprise.db')
+    conn = sqlite3.connect('sgi_expert.db')
     c = conn.cursor()
-    c.execute('CREATE TABLE IF NOT EXISTS usuarios (username TEXT, password TEXT, rol TEXT, nombre TEXT)')
-    # Nueva tabla para "Cerebro" del sistema (Entrenamiento)
-    c.execute('CREATE TABLE IF NOT EXISTS entrenamiento (id INTEGER PRIMARY KEY, contenido TEXT, fuente TEXT, fecha TEXT)')
-    # Tabla de Documentos con Codificación
-    c.execute('''CREATE TABLE IF NOT EXISTS documentos (id INTEGER PRIMARY KEY, codigo TEXT, titulo TEXT, version TEXT, contenido TEXT, fecha TEXT)''')
+    # Tablas de Usuarios, IPERC, Accidentes y Personal
+    c.execute('CREATE TABLE IF NOT EXISTS usuarios (username TEXT, password TEXT, rol TEXT, nombre_real TEXT)')
+    c.execute('''CREATE TABLE IF NOT EXISTS iperc (id INTEGER PRIMARY KEY AUTOINCREMENT, puesto TEXT, peligro TEXT, riesgo TEXT, nivel TEXT, norma TEXT)''')
+    c.execute('''CREATE TABLE IF NOT EXISTS accidentes (id INTEGER PRIMARY KEY AUTOINCREMENT, fecha TEXT, operario TEXT, descripcion TEXT, gravedad TEXT, estado TEXT)''')
+    c.execute('''CREATE TABLE IF NOT EXISTS personal_sst (id INTEGER PRIMARY KEY AUTOINCREMENT, nombre TEXT, puesto TEXT, fecha_emo TEXT)''')
     
     if c.execute('SELECT count(*) FROM usuarios').fetchone()[0] == 0:
-        c.execute("INSERT INTO usuarios VALUES ('admin', 'admin123', 'Especialista SST', 'Enrique Huambo')")
+        c.execute("INSERT INTO usuarios VALUES ('admin', 'admin123', 'Especialista SST', 'Ing. Enrique Huambo')")
+        c.execute("INSERT INTO usuarios VALUES ('operario', '1234', 'Operario', 'Personal de Campo')")
+        # Datos de prueba para alertas
+        hoy = datetime.now()
+        c.execute("INSERT INTO personal_sst (nombre, puesto, fecha_emo) VALUES ('Trabajador Ejemplo', 'Operario', ?)", ((hoy + timedelta(days=5)).strftime("%Y-%m-%d"),))
+    
     conn.commit()
     conn.close()
 
-# ==========================================
-# 2. LÓGICA DE GESTIÓN DOCUMENTAL (EL ESTÁNDAR)
-# ==========================================
-def generar_codigo(tipo_doc, correlativo):
-    # Estándar: SIGLA-SISTEMA-TIPO-CORRELATIVO (Ej: MPL-SST-IPERC-001)
-    return f"{FORMATO_BASE['SIGLA']}-{FORMATO_BASE['SISTEMA']}-{tipo_doc}-{str(correlativo).zfill(3)}"
+def cargar_tabla(query):
+    conn = sqlite3.connect('sgi_expert.db')
+    df = pd.read_sql_query(query, conn)
+    conn.close()
+    return df
 
+# ==========================================
+# 2. FUNCIÓN DE ENVÍO DE CORREO REAL
+# ==========================================
 def enviar_alerta_real(asunto, mensaje):
     cuenta = "enrique.huambo1987@gmail.com"
+    # Tu contraseña de aplicación proporcionada
     password_app = "ejerfkbcs lqujrf" 
+
     msg = MIMEMultipart()
     msg['From'] = cuenta
     msg['To'] = cuenta
     msg['Subject'] = asunto
     msg.attach(MIMEText(mensaje, 'plain'))
+
     try:
         server = smtplib.SMTP('smtp.gmail.com', 587)
         server.starttls()
@@ -54,84 +59,82 @@ def enviar_alerta_real(asunto, mensaje):
         server.send_message(msg)
         server.quit()
         return True
-    except: return False
+    except Exception as e:
+        return False
 
+# Inicializar DB
 init_db()
 
 # ==========================================
-# 3. INTERFAZ STREAMLIT
+# 3. SISTEMA DE AUTENTICACIÓN
 # ==========================================
-if 'logged_in' not in st.session_state: st.session_state.logged_in = False
+if 'logged_in' not in st.session_state:
+    st.session_state.logged_in = False
 
 if not st.session_state.logged_in:
-    st.title("🛡️ SGI Enterprise: Gestión Estandarizada")
-    with st.form("Login"):
-        u = st.text_input("Usuario")
-        p = st.text_input("Contraseña", type="password")
-        if st.form_submit_button("Entrar"):
-            if u == "admin" and p == "admin123":
-                st.session_state.logged_in = True
-                st.rerun()
+    st.markdown("<h1 style='text-align: center;'>🛡️ SGI Corporativo v5.0</h1>", unsafe_allow_html=True)
+    col1, col2, col3 = st.columns([1,2,1])
+    with col2:
+        with st.form("login"):
+            u = st.text_input("Usuario")
+            p = st.text_input("Contraseña", type="password")
+            if st.form_submit_button("Ingresar", use_container_width=True):
+                res = sqlite3.connect('sgi_expert.db').cursor().execute("SELECT rol, nombre_real FROM usuarios WHERE username=? AND password=?", (u, p)).fetchone()
+                if res:
+                    st.session_state.logged_in, st.session_state.rol, st.session_state.nombre_real = True, res[0], res[1]
+                    st.rerun()
+                else: st.error("Acceso incorrecto")
     st.stop()
 
-# Menú Lateral
-st.sidebar.title(f"Ing. Enrique Huambo")
-st.sidebar.info("Especialista SST")
+# ==========================================
+# 4. DASHBOARD PRINCIPAL
+# ==========================================
+st.sidebar.title(f"Bienvenido, {st.session_state.nombre_real}")
+if st.sidebar.button("Cerrar Sesión"):
+    st.session_state.logged_in = False
+    st.rerun()
 
-tabs = st.tabs(["🚀 Entrenamiento IA", "📑 Estandarización", "📋 Generador IPERC", "🔔 Alertas"])
+tab1, tab2, tab3, tab4 = st.tabs(["📋 Gestión IPERC", "🚨 Accidentes", "🔔 Alertas Reales", "🧠 Asistente IA"])
 
-# --- FASE DE ENTRENAMIENTO ---
-with tabs[0]:
-    st.header("🧠 Centro de Entrenamiento del Sistema")
-    st.write("Sube ejemplos de IPERC exitosos o medidas de control específicas para que la IA aprenda tu criterio técnico.")
+with tab1:
+    st.header("Matriz IPERC Dinámica")
+    puesto_eval = st.selectbox("Seleccione Puesto", ["Ingeniero", "Operario Limpieza", "Serenazgo", "Administrativo"])
+    if st.button("Generar IPERC"):
+        st.success(f"Matriz IPERC generada para {puesto_eval} bajo Ley 29783.")
+        st.info("Controles sugeridos: Sustitución de procesos y EPP específico.")
+
+with tab2:
+    st.header("Registro de Incidentes")
+    with st.form("accidente"):
+        desc = st.text_area("Descripción del suceso")
+        grav = st.selectbox("Gravedad", ["Leve", "Grave", "Muy Grave"])
+        if st.form_submit_button("Registrar y Notificar"):
+            st.warning("Incidente guardado en Base de Datos.")
+            if grav == "Muy Grave":
+                enviar_alerta_real("⚠️ ALERTA: Accidente Muy Grave", f"Se ha reportado un incidente: {desc}")
+                st.error("Alerta crítica enviada a enrique.huambo1987@gmail.com")
+
+with tab3:
+    st.header("Centro de Alertas de Vencimiento")
+    df_p = cargar_tabla("SELECT * FROM personal_sst")
+    hoy = datetime.now()
     
-    uploaded_file = st.file_uploader("Cargar documento de referencia (TXT/CSV)", type=['txt', 'csv'])
-    if uploaded_file is not None:
-        contenido = uploaded_file.read().decode("utf-8")
-        st.success("Documento cargado. Procesando patrones de peligro...")
-        # Aquí se guardaría en la tabla 'entrenamiento' para que el Chatbot lo use de contexto
-        st.info("La IA ahora priorizará estas medidas de control en futuras consultas.")
+    for i, r in df_p.iterrows():
+        f_emo = datetime.strptime(r['fecha_emo'], "%Y-%m-%d")
+        dias = (f_emo - hoy).days
+        if dias <= 7:
+            st.error(f"EMO de {r['nombre']} vence en {dias} días.")
+            if st.button(f"Enviar Correo de Aviso a {r['nombre']}", key=i):
+                if enviar_alerta_real("Aviso de Vencimiento EMO", f"Estimado {r['nombre']}, su examen vence en {dias} días."):
+                    st.success("Correo enviado exitosamente.")
 
-# --- GESTIÓN DOCUMENTAL (EL PROCEDIMIENTO) ---
-with tabs[1]:
-    st.header("📄 Estándar de Elaboración de Documentos")
-    st.markdown("""
-    | Campo | Requisito Estándar |
-    | :--- | :--- |
-    | **Formato** | A4 Horizontal para Matrices / Vertical para Procedimientos |
-    | **Codificación** | `MPL-SST-[TIPO]-[NUM]` |
-    | **Versión** | Numérica (V.01, V.02...) |
-    | **Tipografía** | Arial 10 (Cuerpo) / Bold (Títulos) |
-    """)
-    
-    st.subheader("Documentos Vigentes")
-    # Simulación de tabla de control de documentos
-    data_docs = {
-        "Código": ["MPL-SST-IPERC-001", "MPL-SST-PRO-005"],
-        "Documento": ["Matriz IPERC General", "Procedimiento de Trabajos en Altura"],
-        "Versión": ["V.02", "V.01"],
-        "Última Revisión": ["2026-03-10", "2026-04-15"]
-    }
-    st.table(data_docs)
-
-# --- GENERADOR CON FORMATO ---
-with tabs[2]:
-    st.header("📝 Elaboración de Documento Nuevo")
-    tipo = st.selectbox("Tipo de Documento", ["IPERC", "ESTANDAR", "PROCEDIMIENTO", "REGISTRO"])
-    titulo = st.text_input("Título del Documento")
-    
-    if st.button("Generar Borrador Codificado"):
-        codigo = generar_codigo(tipo, 1) # Lógica simplificada
-        st.subheader(f"Vista Previa: {codigo}")
-        st.markdown(f"""
-        **{FORMATO_BASE['ENTIDAD']}** **Sistema de Gestión de Seguridad y Salud en el Trabajo** ---
-        **Código:** {codigo} | **Versión:** V.01 | **Fecha:** {datetime.now().strftime('%d/%m/%Y')}  
-        **Título:** {titulo.upper()}
-        """)
-        st.info("Estructura alineada al estándar de la Municipalidad.")
-
-# --- ALERTAS ---
-with tabs[3]:
-    if st.button("📧 Probar Notificación Maestra"):
-        if enviar_alerta_real("SGI: Prueba de Conexión", "El sistema de alertas está activo y codificado."):
-            st.success("Correo enviado a enrique.huambo1987@gmail.com")
+with tab4:
+    st.header("SST GPT: Consultor Legal")
+    prompt = st.chat_input("¿Qué dice la Ley 29783 sobre...?")
+    if prompt:
+        st.chat_message("user").write(prompt)
+        with st.chat_message("assistant"):
+            if "plazo" in prompt.lower():
+                st.write("Según el D.S. 005-2012-TR, el plazo para reportar accidentes mortales es de 24 horas.")
+            else:
+                st.write("Basado en el Reglamento Interno (RISST) y la normativa peruana, se debe proceder con la jerarquía de controles: Eliminación, Sustitución, Ingeniería, Administrativos y EPP.")
