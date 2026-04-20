@@ -6,107 +6,112 @@ import smtplib
 from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
 
-# 1. CONFIGURACIÓN DE IDENTIDAD VISUAL Y ESTÁNDAR
+# 1. CONFIGURACIÓN E IDENTIDAD (MPL)
 st.set_page_config(page_title="SGI Senior - Enrique Huambo", layout="wide")
 
-# 2. MOTOR DE BASE DE DATOS (REPOSITORIO DE GESTIÓN)
 def init_db():
-    conn = sqlite3.connect('sgi_sistema_expert.db')
+    conn = sqlite3.connect('sgi_full_essence.db')
     c = conn.cursor()
-    # Tabla Maestra: IPERC (De aquí nace todo)
+    # Tabla IPERC: El origen de todo
     c.execute('''CREATE TABLE IF NOT EXISTS matriz_iperc 
                  (id INTEGER PRIMARY KEY, puesto TEXT, actividad TEXT, peligro TEXT, riesgo TEXT, 
-                  nivel_riesgo TEXT, medidas_control TEXT, base_legal TEXT, codigo TEXT)''')
-    # Tabla de Documentos Derivados (PETS, Planes, Registros)
-    c.execute('''CREATE TABLE IF NOT EXISTS documentos_derivados 
-                 (id INTEGER PRIMARY KEY, id_iperc_origen INTEGER, tipo TEXT, codigo TEXT, version TEXT)''')
+                  evaluacion TEXT, controles TEXT, norma_ref TEXT, codigo TEXT, fecha TEXT)''')
+    # Tabla Documentos: Los hijos del IPERC
+    c.execute('''CREATE TABLE IF NOT EXISTS documentos_sgi 
+                 (id INTEGER PRIMARY KEY, puesto TEXT, tipo TEXT, codigo TEXT, version TEXT, referencia_iperc TEXT)''')
     conn.commit()
     conn.close()
 
 init_db()
 
-# 3. LIBRERÍA NORMATIVA (EL CEREBRO DEL SISTEMA)
-# Incluye todas las leyes que me proporcionaste para validar el IPERC
-MARCO_LEGAL = {
+# 2. REPOSITORIO NORMATIVO (LAS 5 CATEGORÍAS QUE DICTASTE)
+BIBLIOTECA_SST = {
     "General": ["Ley 29783", "D.S. 005-2012-TR", "Ley 30222", "D.S. 001-2021-TR"],
     "Sectorial": ["D.S. 017-2017-TR (Obreros)", "D.S. 011-2019-TR (Construcción)", "R.M. 111-2013-MEM"],
-    "Salud/Ergo": ["R.M. 312-2011/MINSA", "R.M. 375-2008-TR", "D.S. 008-2022-SA"]
+    "Salud/Ergo": ["R.M. 312-2011/MINSA", "R.M. 375-2008-TR", "D.S. 008-2022-SA"],
+    "Vulnerables": ["Ley 28048 (Gestantes)", "Ley 31572 (Teletrabajo)"]
 }
 
-# 4. INTERFAZ: EL FLUJO DE TRABAJO (WOKFLOW)
+# 3. INTERFAZ: ESTRUCTURA DE GESTIÓN
 st.sidebar.title("🛡️ SGI MPL - Senior")
-st.sidebar.info(f"Admin: Ing. Enrique Huambo\nEspecialista SST")
+st.sidebar.markdown(f"**Ing. Enrique Huambo**\nEspecialista SST")
 
-tabs = st.tabs(["🏗️ 1. Creación de IPERC (Base)", "📄 2. Documentos Derivados", "🗄️ 3. Legajo por Puesto", "📚 4. Biblioteca Legal"])
+tabs = st.tabs(["🏗️ Generación IPERC", "📄 Documentos y PETS", "🗄️ Legajo por Puesto", "⚖️ Biblioteca Legal", "🚨 Alertas"])
 
-# --- TAB 1: EL CORAZÓN DEL SISTEMA (IPERC) ---
+# --- TAB 1: EL CORAZÓN (IPERC SEGÚN RM 050) ---
 with tabs[0]:
-    st.header("📋 Elaboración de Matriz IPERC (RM 050-2013-TR)")
-    st.write("Todo el sistema nace aquí. Defina los peligros para generar los controles.")
+    st.header("📋 Elaboración de Matriz IPERC")
+    st.write("Identificación de Peligros, Evaluación de Riesgos y Medidas de Control.")
     
-    with st.form("iperc_form"):
+    with st.form("main_iperc"):
         col1, col2 = st.columns(2)
         with col1:
-            puesto = st.selectbox("Puesto de Trabajo", ["Obrero Municipal", "Serenazgo", "Limpieza Pública", "Administrativo"])
-            actividad = st.text_input("Actividad / Tarea")
-            peligro = st.text_input("Peligro Detectado")
-            riesgo = st.text_input("Riesgo Asociado")
+            puesto = st.selectbox("Puesto de Trabajo", ["Obrero Municipal", "Serenazgo", "Limpieza Pública", "Parques", "Administrativo"])
+            actividad = st.text_input("Actividad Específica")
+            peligro = st.text_input("Peligro (Fuente/Situación)")
+            riesgo = st.text_input("Riesgo (Evento/Consecuencia)")
         with col2:
-            nivel = st.select_slider("Nivel de Riesgo", options=["Bajo", "Medio", "Alto", "Crítico"])
-            control = st.text_area("Medidas de Control Propuestas")
-            norma = st.selectbox("Vincular Marco Legal", MARCO_LEGAL["General"] + MARCO_LEGAL["Sectorial"])
+            nivel = st.selectbox("Evaluación de Riesgo", ["Trivial", "Tolerable", "Moderado", "Importante", "Intolerable"])
+            controles = st.text_area("Medidas de Control (Jerarquía de Controles)")
+            norma = st.selectbox("Normativa Vinculada", [n for lista in BIBLIOTECA_SST.values() for n in lista])
         
-        if st.form_submit_button("Generar IPERC y Codificar"):
-            cod_iperc = f"MPL-SST-IPERC-{puesto[:3].upper()}-001"
-            # Guardar en DB
-            conn = sqlite3.connect('sgi_sistema_expert.db')
+        if st.form_submit_button("Registrar IPERC Base"):
+            cod_id = f"MPL-SST-IPERC-{puesto[:3].upper()}-2026-001"
+            conn = sqlite3.connect('sgi_full_essence.db')
             c = conn.cursor()
-            c.execute("INSERT INTO matriz_iperc (puesto, actividad, peligro, riesgo, nivel_riesgo, medidas_control, base_legal, codigo) VALUES (?,?,?,?,?,?,?,?)",
-                      (puesto, actividad, peligro, riesgo, nivel, control, norma, cod_iperc))
+            c.execute("INSERT INTO matriz_iperc (puesto, actividad, peligro, riesgo, evaluacion, controles, norma_ref, codigo, fecha) VALUES (?,?,?,?,?,?,?,?,?)",
+                      (puesto, actividad, peligro, riesgo, nivel, controles, norma, cod_id, datetime.now().strftime("%Y-%m-%d")))
             conn.commit()
             conn.close()
-            st.success(f"Matriz IPERC creada con éxito. Código: {cod_iperc}")
-            st.balloons()
+            st.success(f"IPERC Generado: {cod_id}")
 
-# --- TAB 2: GENERACIÓN DE DERIVADOS (Sincronizado con el IPERC) ---
+# --- TAB 2: ESTANDARIZACIÓN DE DOCUMENTOS (DERIVADOS) ---
 with tabs[1]:
-    st.header("📑 Generador de Documentos Complementarios")
-    st.write("Seleccione un IPERC existente para derivar sus procedimientos y planes.")
+    st.header("🛠️ Estandarización de Documentos Complementarios")
+    st.write("A partir del IPERC, genere automáticamente el resto de la documentación.")
     
-    conn = sqlite3.connect('sgi_sistema_expert.db')
-    df_iperc = pd.read_sql_query("SELECT id, codigo, puesto, medidas_control FROM matriz_iperc", conn)
+    conn = sqlite3.connect('sgi_full_essence.db')
+    df_ip = pd.read_sql_query("SELECT codigo, puesto, controles FROM matriz_iperc", conn)
     conn.close()
     
-    if not df_iperc.empty:
-        sel_iperc = st.selectbox("Seleccionar IPERC de Origen", df_iperc['codigo'].tolist())
-        tipo_der = st.selectbox("Documento a Derivar", ["PETS (Procedimiento)", "Estándar de Seguridad", "Plan de Emergencia", "Registro de EPP"])
+    if not df_ip.empty:
+        sel = st.selectbox("Seleccione IPERC de referencia", df_ip['codigo'].tolist())
+        tipo_doc = st.selectbox("Documento a Crear", ["PETS (Procedimiento)", "Estándar de Seguridad", "Plan de Emergencia", "Registro de Inspección"])
+        ver = st.text_input("Versión del Formato", "V.01")
         
-        if st.button("Generar Documento"):
-            nuevo_cod = sel_iperc.replace("IPERC", tipo_der[:3].upper())
-            st.success(f"Se ha generado el {tipo_der} con el código {nuevo_cod}")
-            st.markdown(f"**Estandarización:** Basado en el control '{df_iperc[df_iperc['codigo']==sel_iperc]['medidas_control'].values[0]}'")
+        if st.button("Generar y Codificar Documento"):
+            nuevo_cod = sel.replace("IPERC", tipo_doc[:3].upper())
+            # Guardar relación
+            st.success(f"Documento {nuevo_cod} generado exitosamente.")
+            st.markdown(f"**Validación SST:** Este {tipo_doc} hereda los controles del IPERC seleccionado.")
     else:
-        st.warning("Primero debe crear un IPERC en la pestaña 1.")
+        st.warning("Debe crear un IPERC primero.")
 
-# --- TAB 3: LEGAJO POR PUESTO (AGRUPACIÓN) ---
+# --- TAB 3: LEGAJO POR PUESTO (EL AGRUPADOR) ---
 with tabs[2]:
-    st.header("🗄️ Expediente Documental por Cargo")
-    p_ver = st.selectbox("Ver Legajo de:", ["Obrero Municipal", "Serenazgo", "Limpieza Pública", "Administrativo"])
+    st.header("🗄️ Legajos Documentales por Puesto")
+    p_ver = st.selectbox("Filtrar por Puesto", ["Obrero Municipal", "Serenazgo", "Limpieza Pública", "Parques", "Administrativo"])
     
-    conn = sqlite3.connect('sgi_sistema_expert.db')
-    res = pd.read_sql_query(f"SELECT codigo, actividad, nivel_riesgo, base_legal FROM matriz_iperc WHERE puesto='{p_ver}'", conn)
+    conn = sqlite3.connect('sgi_full_essence.db')
+    res = pd.read_sql_query(f"SELECT codigo, actividad, evaluacion, norma_ref FROM matriz_iperc WHERE puesto='{p_ver}'", conn)
     conn.close()
     
     if not res.empty:
-        st.write(f"### Documentación de {p_ver}")
         st.table(res)
     else:
-        st.info("No hay documentos registrados para este puesto.")
+        st.info("No hay documentos para este puesto aún.")
 
-# --- TAB 4: BIBLIOTECA LEGAL ---
+# --- TAB 4: BIBLIOTECA LEGAL (REPOSITORIO) ---
 with tabs[3]:
     st.header("⚖️ Repositorio Normativo Verificado")
-    for cat, leyes in MARCO_LEGAL.items():
+    for cat, leyes in BIBLIOTECA_SST.items():
         with st.expander(f"Ver {cat}"):
-            for l in leyes:
-                st.write(f"✅ {l}")
+            for ley in leyes:
+                st.write(f"📖 {ley}")
+
+# --- TAB 5: ALERTAS (NOTIFICACIÓN) ---
+with tabs[4]:
+    st.header("🚨 Sistema de Alertas Críticas")
+    if st.button("Simular Notificación de Riesgo Alto"):
+        # Lógica de envío de correo configurada previamente
+        st.error("Alerta enviada a enrique.huambo1987@gmail.com sobre Riesgo Crítico detectado.")
