@@ -6,86 +6,107 @@ import smtplib
 from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
 
-# 1. BASE DE DATOS DE GESTIÓN DOCUMENTAL
+# 1. CONFIGURACIÓN DE IDENTIDAD VISUAL Y ESTÁNDAR
+st.set_page_config(page_title="SGI Senior - Enrique Huambo", layout="wide")
+
+# 2. MOTOR DE BASE DE DATOS (REPOSITORIO DE GESTIÓN)
 def init_db():
-    conn = sqlite3.connect('sgi_lambayeque.db')
+    conn = sqlite3.connect('sgi_sistema_expert.db')
     c = conn.cursor()
-    # Tabla para documentos generados (IPERC, Planes, etc)
-    c.execute('''CREATE TABLE IF NOT EXISTS documentos_sgi 
-                 (id INTEGER PRIMARY KEY, puesto TEXT, tipo TEXT, codigo TEXT, version TEXT, fecha TEXT, contenido TEXT)''')
+    # Tabla Maestra: IPERC (De aquí nace todo)
+    c.execute('''CREATE TABLE IF NOT EXISTS matriz_iperc 
+                 (id INTEGER PRIMARY KEY, puesto TEXT, actividad TEXT, peligro TEXT, riesgo TEXT, 
+                  nivel_riesgo TEXT, medidas_control TEXT, base_legal TEXT, codigo TEXT)''')
+    # Tabla de Documentos Derivados (PETS, Planes, Registros)
+    c.execute('''CREATE TABLE IF NOT EXISTS documentos_derivados 
+                 (id INTEGER PRIMARY KEY, id_iperc_origen INTEGER, tipo TEXT, codigo TEXT, version TEXT)''')
     conn.commit()
     conn.close()
 
 init_db()
 
-# 2. REPOSITORIO DE NORMATIVA PARA ESTANDARIZACIÓN
-LIBRERIA_LEGAL = {
-    "IPERC": "Ley 29783 Art. 57 / D.S. 005-2012-TR Art. 77",
-    "Plan de Emergencia": "Ley 29783 Art. 25 / D.S. 005-2012-TR Art. 83",
-    "Procedimiento (PETS)": "D.S. 017-2017-TR (Obreros Municipales)",
-    "Registros": "R.M. 050-2013-TR (Formatos Referenciales)"
+# 3. LIBRERÍA NORMATIVA (EL CEREBRO DEL SISTEMA)
+# Incluye todas las leyes que me proporcionaste para validar el IPERC
+MARCO_LEGAL = {
+    "General": ["Ley 29783", "D.S. 005-2012-TR", "Ley 30222", "D.S. 001-2021-TR"],
+    "Sectorial": ["D.S. 017-2017-TR (Obreros)", "D.S. 011-2019-TR (Construcción)", "R.M. 111-2013-MEM"],
+    "Salud/Ergo": ["R.M. 312-2011/MINSA", "R.M. 375-2008-TR", "D.S. 008-2022-SA"]
 }
 
-# 3. INTERFAZ OPERATIVA
-st.set_page_config(page_title="SGI MPL - Enrique Huambo", layout="wide")
-st.title("🛡️ Sistema de Gestión Integrado - MPL")
+# 4. INTERFAZ: EL FLUJO DE TRABAJO (WOKFLOW)
+st.sidebar.title("🛡️ SGI MPL - Senior")
+st.sidebar.info(f"Admin: Ing. Enrique Huambo\nEspecialista SST")
 
-tabs = st.tabs(["📝 Generador de Documentos", "📂 Legajo por Puesto", "⚖️ Repositorio Legal", "🚨 Operatividad Diaria"])
+tabs = st.tabs(["🏗️ 1. Creación de IPERC (Base)", "📄 2. Documentos Derivados", "🗄️ 3. Legajo por Puesto", "📚 4. Biblioteca Legal"])
 
-# --- TAB 1: GENERACIÓN Y ESTANDARIZACIÓN (Aquí está lo que buscas) ---
+# --- TAB 1: EL CORAZÓN DEL SISTEMA (IPERC) ---
 with tabs[0]:
-    st.header("🛠️ Fábrica de Documentos Estandarizados")
-    col_a, col_b = st.columns(2)
+    st.header("📋 Elaboración de Matriz IPERC (RM 050-2013-TR)")
+    st.write("Todo el sistema nace aquí. Defina los peligros para generar los controles.")
     
-    with col_a:
-        puesto_target = st.selectbox("Puesto de Trabajo", ["Limpieza Pública", "Serenazgo", "Parques y Jardines", "Administrativo"])
-        tipo_doc = st.selectbox("Tipo de Documento a Generar", ["IPERC", "Procedimiento (PETS)", "Plan de Emergencia", "Registro de Inspección"])
-        version = st.text_input("Versión", "V.01")
+    with st.form("iperc_form"):
+        col1, col2 = st.columns(2)
+        with col1:
+            puesto = st.selectbox("Puesto de Trabajo", ["Obrero Municipal", "Serenazgo", "Limpieza Pública", "Administrativo"])
+            actividad = st.text_input("Actividad / Tarea")
+            peligro = st.text_input("Peligro Detectado")
+            riesgo = st.text_input("Riesgo Asociado")
+        with col2:
+            nivel = st.select_slider("Nivel de Riesgo", options=["Bajo", "Medio", "Alto", "Crítico"])
+            control = st.text_area("Medidas de Control Propuestas")
+            norma = st.selectbox("Vincular Marco Legal", MARCO_LEGAL["General"] + MARCO_LEGAL["Sectorial"])
         
-    with col_b:
-        # Lógica de Codificación Automática
-        prefijo = "MPL-SST"
-        abrevia = tipo_doc[:3].upper()
-        codigo_aut = f"{prefijo}-{abrevia}-{puesto_target[:3].upper()}-2026-001"
-        st.info(f"**Código Sugerido:** {codigo_aut}")
-        norma_cita = LIBRERIA_LEGAL.get(tipo_doc, "Ley 29783")
-        st.write(f"**Base Legal Aplicada:** {norma_cita}")
+        if st.form_submit_button("Generar IPERC y Codificar"):
+            cod_iperc = f"MPL-SST-IPERC-{puesto[:3].upper()}-001"
+            # Guardar en DB
+            conn = sqlite3.connect('sgi_sistema_expert.db')
+            c = conn.cursor()
+            c.execute("INSERT INTO matriz_iperc (puesto, actividad, peligro, riesgo, nivel_riesgo, medidas_control, base_legal, codigo) VALUES (?,?,?,?,?,?,?,?)",
+                      (puesto, actividad, peligro, riesgo, nivel, control, norma, cod_iperc))
+            conn.commit()
+            conn.close()
+            st.success(f"Matriz IPERC creada con éxito. Código: {cod_iperc}")
+            st.balloons()
 
-    if st.button("Generar y Archivar en el Legajo"):
-        # Guardar en Base de Datos
-        conn = sqlite3.connect('sgi_lambayeque.db')
-        c = conn.cursor()
-        c.execute("INSERT INTO documentos_sgi (puesto, tipo, codigo, version, fecha, contenido) VALUES (?,?,?,?,?,?)",
-                  (puesto_target, tipo_doc, codigo_aut, version, datetime.now().strftime("%Y-%m-%d"), f"Documento estándar para {puesto_target}"))
-        conn.commit()
-        conn.close()
-        st.success(f"¡Documento {codigo_aut} creado y archivado exitosamente!")
-
-# --- TAB 2: AGRUPACIÓN POR PUESTO ---
+# --- TAB 2: GENERACIÓN DE DERIVADOS (Sincronizado con el IPERC) ---
 with tabs[1]:
-    st.header("🗄️ Expediente Documental Agrupado")
-    filtro = st.selectbox("Ver documentos de:", ["Limpieza Pública", "Serenazgo", "Parques y Jardines", "Administrativo"])
+    st.header("📑 Generador de Documentos Complementarios")
+    st.write("Seleccione un IPERC existente para derivar sus procedimientos y planes.")
     
-    # Consulta a la DB
-    conn = sqlite3.connect('sgi_lambayeque.db')
-    df_docs = pd.read_sql_query(f"SELECT tipo, codigo, version, fecha FROM documentos_sgi WHERE puesto='{filtro}'", conn)
+    conn = sqlite3.connect('sgi_sistema_expert.db')
+    df_iperc = pd.read_sql_query("SELECT id, codigo, puesto, medidas_control FROM matriz_iperc", conn)
     conn.close()
     
-    if not df_docs.empty:
-        st.table(df_docs)
+    if not df_iperc.empty:
+        sel_iperc = st.selectbox("Seleccionar IPERC de Origen", df_iperc['codigo'].tolist())
+        tipo_der = st.selectbox("Documento a Derivar", ["PETS (Procedimiento)", "Estándar de Seguridad", "Plan de Emergencia", "Registro de EPP"])
+        
+        if st.button("Generar Documento"):
+            nuevo_cod = sel_iperc.replace("IPERC", tipo_der[:3].upper())
+            st.success(f"Se ha generado el {tipo_der} con el código {nuevo_cod}")
+            st.markdown(f"**Estandarización:** Basado en el control '{df_iperc[df_iperc['codigo']==sel_iperc]['medidas_control'].values[0]}'")
     else:
-        st.warning("Aún no hay documentos generados para este puesto.")
+        st.warning("Primero debe crear un IPERC en la pestaña 1.")
 
-# --- TAB 3: REPOSITORIO LEGAL ---
+# --- TAB 3: LEGAJO POR PUESTO (AGRUPACIÓN) ---
 with tabs[2]:
-    st.header("📚 Biblioteca Normativa Verificada")
-    st.write("Consulta rápida de las leyes que sustentan tu SGI.")
-    # (Aquí va el listado de las 5 categorías que me diste anteriormente)
-    st.markdown("- **Ley 29783:** Norma Matriz de SST.")
-    st.markdown("- **D.S. 017-2017-TR:** Seguridad para Obreros Municipales.")
+    st.header("🗄️ Expediente Documental por Cargo")
+    p_ver = st.selectbox("Ver Legajo de:", ["Obrero Municipal", "Serenazgo", "Limpieza Pública", "Administrativo"])
+    
+    conn = sqlite3.connect('sgi_sistema_expert.db')
+    res = pd.read_sql_query(f"SELECT codigo, actividad, nivel_riesgo, base_legal FROM matriz_iperc WHERE puesto='{p_ver}'", conn)
+    conn.close()
+    
+    if not res.empty:
+        st.write(f"### Documentación de {p_ver}")
+        st.table(res)
+    else:
+        st.info("No hay documentos registrados para este puesto.")
 
-# --- TAB 4: OPERATIVIDAD (ATS Y ACCIDENTES) ---
+# --- TAB 4: BIBLIOTECA LEGAL ---
 with tabs[3]:
-    st.header("🚨 Gestión en Campo")
-    # Formularios de ATS y Reporte de Accidentes con envío de correo
-    st.write("Use esta pestaña para firmas digitales y reportes inmediatos.")
+    st.header("⚖️ Repositorio Normativo Verificado")
+    for cat, leyes in MARCO_LEGAL.items():
+        with st.expander(f"Ver {cat}"):
+            for l in leyes:
+                st.write(f"✅ {l}")
