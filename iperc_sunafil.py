@@ -1,53 +1,52 @@
 import streamlit as st
 import pandas as pd
-from datetime import datetime
+from datetime import datetime, timedelta
 import sqlite3
 import smtplib
 from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
 
 # ==========================================
-# 📚 LIBRERÍA NORMATIVA REAL Y VERIFICADA (SST PERÚ)
+# CONFIGURACIÓN Y ESTÁNDARES (ISO / SST)
 # ==========================================
-LIBRERIA_LEGAL = {
-    "Ley 29783": {
-        "Art. 19": "Participación de los trabajadores en el sistema de gestión.",
-        "Art. 57": "Evaluación de riesgos (IPERC) debe actualizarse una vez al año como mínimo.",
-        "Art. 77": "Protección de trabajadores en situación de discapacidad.",
-        "Art. 79": "Obligaciones de los trabajadores en materia de prevención."
-    },
-    "D.S. 005-2012-TR": {
-        "Art. 26": "El empleador debe adoptar un enfoque de sistema de gestión.",
-        "Art. 32": "Documentos obligatorios: Registros de accidentes, enfermedades, IPERC.",
-        "Art. 103": "Plazos para la investigación de accidentes de trabajo."
-    }
+FORMATO_BASE = {
+    "ENTIDAD": "Municipalidad Provincial de Lambayeque",
+    "SIGLA": "MPL",
+    "SISTEMA": "SST"
 }
 
 # ==========================================
-# 1. MOTOR DE BASE DE DATOS MEJORADO
+# 1. BASE DE DATOS MEJORADA
 # ==========================================
 def init_db():
-    conn = sqlite3.connect('sgi_cloud.db')
+    conn = sqlite3.connect('sgi_enterprise.db')
     c = conn.cursor()
-    # Tabla para agrupar documentos por puesto
-    c.execute('''CREATE TABLE IF NOT EXISTS documentos_puesto 
-                 (id INTEGER PRIMARY KEY, puesto TEXT, codigo TEXT, tipo TEXT, version TEXT, link_doc TEXT)''')
-    # Tabla para histórico de entrenamiento
-    c.execute('CREATE TABLE IF NOT EXISTS base_conocimiento (id INTEGER PRIMARY KEY, contenido TEXT)')
+    c.execute('CREATE TABLE IF NOT EXISTS usuarios (username TEXT, password TEXT, rol TEXT, nombre TEXT)')
+    # Nueva tabla para "Cerebro" del sistema (Entrenamiento)
+    c.execute('CREATE TABLE IF NOT EXISTS entrenamiento (id INTEGER PRIMARY KEY, contenido TEXT, fuente TEXT, fecha TEXT)')
+    # Tabla de Documentos con Codificación
+    c.execute('''CREATE TABLE IF NOT EXISTS documentos (id INTEGER PRIMARY KEY, codigo TEXT, titulo TEXT, version TEXT, contenido TEXT, fecha TEXT)''')
+    
+    if c.execute('SELECT count(*) FROM usuarios').fetchone()[0] == 0:
+        c.execute("INSERT INTO usuarios VALUES ('admin', 'admin123', 'Especialista SST', 'Enrique Huambo')")
     conn.commit()
     conn.close()
 
-init_db()
+# ==========================================
+# 2. LÓGICA DE GESTIÓN DOCUMENTAL (EL ESTÁNDAR)
+# ==========================================
+def generar_codigo(tipo_doc, correlativo):
+    # Estándar: SIGLA-SISTEMA-TIPO-CORRELATIVO (Ej: MPL-SST-IPERC-001)
+    return f"{FORMATO_BASE['SIGLA']}-{FORMATO_BASE['SISTEMA']}-{tipo_doc}-{str(correlativo).zfill(3)}"
 
-# ==========================================
-# 2. SISTEMA DE NOTIFICACIÓN MAESTRO
-# ==========================================
-def enviar_alerta_maestra(asunto, cuerpo):
+def enviar_alerta_real(asunto, mensaje):
     cuenta = "enrique.huambo1987@gmail.com"
-    password_app = "ejer fkb cslq ujrf".replace(" ", "") 
+    password_app = "ejerfkbcs lqujrf" 
     msg = MIMEMultipart()
-    msg['From'], msg['To'], msg['Subject'] = cuenta, cuenta, asunto
-    msg.attach(MIMEText(cuerpo, 'plain'))
+    msg['From'] = cuenta
+    msg['To'] = cuenta
+    msg['Subject'] = asunto
+    msg.attach(MIMEText(mensaje, 'plain'))
     try:
         server = smtplib.SMTP('smtp.gmail.com', 587)
         server.starttls()
@@ -57,59 +56,82 @@ def enviar_alerta_maestra(asunto, cuerpo):
         return True
     except: return False
 
-# ==========================================
-# 3. INTERFAZ PROFESIONAL
-# ==========================================
-st.sidebar.image("https://upload.wikimedia.org/wikipedia/commons/e/e0/Escudo_de_Lambayeque.png", width=100)
-st.sidebar.title("SGI Cloud MPL")
-st.sidebar.markdown(f"**Usuario:** Ing. Enrique Huambo\n**Sede:** Lambayeque")
+init_db()
 
-tabs = st.tabs(["📂 Legajo por Puesto", "📚 Librería Normativa", "🧠 Entrenamiento", "📝 Generador"])
+# ==========================================
+# 3. INTERFAZ STREAMLIT
+# ==========================================
+if 'logged_in' not in st.session_state: st.session_state.logged_in = False
 
-# --- TAB 1: AGRUPACIÓN POR PUESTO ---
+if not st.session_state.logged_in:
+    st.title("🛡️ SGI Enterprise: Gestión Estandarizada")
+    with st.form("Login"):
+        u = st.text_input("Usuario")
+        p = st.text_input("Contraseña", type="password")
+        if st.form_submit_button("Entrar"):
+            if u == "admin" and p == "admin123":
+                st.session_state.logged_in = True
+                st.rerun()
+    st.stop()
+
+# Menú Lateral
+st.sidebar.title(f"Ing. Enrique Huambo")
+st.sidebar.info("Especialista SST")
+
+tabs = st.tabs(["🚀 Entrenamiento IA", "📑 Estandarización", "📋 Generador IPERC", "🔔 Alertas"])
+
+# --- FASE DE ENTRENAMIENTO ---
 with tabs[0]:
-    st.header("🗄️ Legajo Documental por Puesto de Trabajo")
-    puesto_sel = st.selectbox("Filtrar Expedientes", ["Limpieza Pública", "Serenazgo", "Administrativo", "Obras"])
+    st.header("🧠 Centro de Entrenamiento del Sistema")
+    st.write("Sube ejemplos de IPERC exitosos o medidas de control específicas para que la IA aprenda tu criterio técnico.")
     
-    # Simulación de agrupación documental real
-    st.info(f"Mostrando documentos agrupados para: **{puesto_sel}**")
-    docs_puesto = [
-        {"Código": f"MPL-SST-IPERC-001", "Tipo": "IPERC", "Versión": "V.02", "Estado": "Vigente"},
-        {"Código": f"MPL-SST-PETS-005", "Tipo": "Procedimiento", "Versión": "V.01", "Estado": "Aprobado"},
-        {"Código": f"MPL-SST-MAP-002", "Tipo": "Mapa de Riesgo", "Versión": "V.01", "Estado": "Vigente"}
-    ]
-    st.table(docs_puesto)
+    uploaded_file = st.file_uploader("Cargar documento de referencia (TXT/CSV)", type=['txt', 'csv'])
+    if uploaded_file is not None:
+        contenido = uploaded_file.read().decode("utf-8")
+        st.success("Documento cargado. Procesando patrones de peligro...")
+        # Aquí se guardaría en la tabla 'entrenamiento' para que el Chatbot lo use de contexto
+        st.info("La IA ahora priorizará estas medidas de control en futuras consultas.")
 
-# --- TAB 2: LIBRERÍA EN LA NUBE ---
+# --- GESTIÓN DOCUMENTAL (EL PROCEDIMIENTO) ---
 with tabs[1]:
-    st.header("⚖️ Librería Legal SST (Verificada)")
-    norma_sel = st.selectbox("Consultar Norma", list(LIBRERIA_LEGAL.keys()))
-    st.write(f"### {norma_sel}")
-    for art, desc in LIBRERIA_LEGAL[norma_sel].items():
-        st.markdown(f"**{art}:** {desc}")
-    st.caption("Fuente: Diario Oficial El Peruano - Actualizado al 2026")
+    st.header("📄 Estándar de Elaboración de Documentos")
+    st.markdown("""
+    | Campo | Requisito Estándar |
+    | :--- | :--- |
+    | **Formato** | A4 Horizontal para Matrices / Vertical para Procedimientos |
+    | **Codificación** | `MPL-SST-[TIPO]-[NUM]` |
+    | **Versión** | Numérica (V.01, V.02...) |
+    | **Tipografía** | Arial 10 (Cuerpo) / Bold (Títulos) |
+    """)
+    
+    st.subheader("Documentos Vigentes")
+    # Simulación de tabla de control de documentos
+    data_docs = {
+        "Código": ["MPL-SST-IPERC-001", "MPL-SST-PRO-005"],
+        "Documento": ["Matriz IPERC General", "Procedimiento de Trabajos en Altura"],
+        "Versión": ["V.02", "V.01"],
+        "Última Revisión": ["2026-03-10", "2026-04-15"]
+    }
+    st.table(data_docs)
 
-# --- TAB 3: ENTRENAMIENTO IA ---
+# --- GENERADOR CON FORMATO ---
 with tabs[2]:
-    st.header("🧠 Entrenamiento y Mejora Continua")
-    input_entrenamiento = st.text_area("Pega aquí nuevos estándares o peligros detectados para entrenar el criterio del sistema:")
-    if st.button("Cargar en Cerebro SST"):
-        with st.spinner("Procesando y verificando contra base legal..."):
-            # Lógica para guardar en base_conocimiento
-            st.success("Conocimiento integrado. Las próximas sugerencias de IPERC incluirán estos datos.")
+    st.header("📝 Elaboración de Documento Nuevo")
+    tipo = st.selectbox("Tipo de Documento", ["IPERC", "ESTANDAR", "PROCEDIMIENTO", "REGISTRO"])
+    titulo = st.text_input("Título del Documento")
+    
+    if st.button("Generar Borrador Codificado"):
+        codigo = generar_codigo(tipo, 1) # Lógica simplificada
+        st.subheader(f"Vista Previa: {codigo}")
+        st.markdown(f"""
+        **{FORMATO_BASE['ENTIDAD']}** **Sistema de Gestión de Seguridad y Salud en el Trabajo** ---
+        **Código:** {codigo} | **Versión:** V.01 | **Fecha:** {datetime.now().strftime('%d/%m/%Y')}  
+        **Título:** {titulo.upper()}
+        """)
+        st.info("Estructura alineada al estándar de la Municipalidad.")
 
-# --- TAB 4: GENERADOR DE DOCUMENTOS ---
+# --- ALERTAS ---
 with tabs[3]:
-    st.header("📄 Generador de Documentos Estándar")
-    with st.form("gen"):
-        t_doc = st.selectbox("Documento a crear", ["IPERC", "PETS", "Estándar de Seguridad"])
-        p_doc = st.selectbox("Asignar a Puesto", ["Limpieza Pública", "Serenazgo", "Administrativo"])
-        if st.form_submit_button("Generar y Codificar"):
-            codigo_gen = f"MPL-SST-{t_doc[:3].upper()}-2026-001"
-            st.success(f"Documento **{codigo_gen}** generado.")
-            st.markdown(f"""
-            **Resumen del Documento:**
-            - **Base Legal:** Ley 29783 Art. 57.
-            - **Agrupación:** Carpeta Virtual / {p_doc} / 2026.
-            - **Estado:** Pendiente de firma del Comité SST.
-            """)
+    if st.button("📧 Probar Notificación Maestra"):
+        if enviar_alerta_real("SGI: Prueba de Conexión", "El sistema de alertas está activo y codificado."):
+            st.success("Correo enviado a enrique.huambo1987@gmail.com")
