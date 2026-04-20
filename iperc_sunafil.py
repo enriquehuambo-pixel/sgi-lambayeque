@@ -1,11 +1,10 @@
 import streamlit as st
 import pandas as pd
-from datetime import datetime, timedelta
+from datetime import datetime
 import sqlite3
 import random
-import time
 
-st.set_page_config(page_title="SGI Expert - Fase 4 (Alertas)", layout="wide")
+st.set_page_config(page_title="SGI Expert - Fase 2 (Operaciones)", layout="wide")
 
 # ==========================================
 # 1. MOTOR DE BASE DE DATOS RELACIONAL (SQL)
@@ -13,33 +12,29 @@ st.set_page_config(page_title="SGI Expert - Fase 4 (Alertas)", layout="wide")
 def init_db():
     conn = sqlite3.connect('sgi_expert.db')
     c = conn.cursor()
-    # Usuarios
-    c.execute('CREATE TABLE IF NOT EXISTS usuarios (username TEXT, password TEXT, rol TEXT, nombre_real TEXT, telefono TEXT)')
-    if c.execute('SELECT count(*) FROM usuarios').fetchone()[0] == 0:
-        c.execute("INSERT INTO usuarios VALUES ('admin', 'admin123', 'Especialista SST', 'Ing. Enrique', '+51999888777')")
-        c.execute("INSERT INTO usuarios VALUES ('medico', 'medico123', 'Médico Ocupacional', 'Dr. Vera', '+51999111222')")
-        c.execute("INSERT INTO usuarios VALUES ('auditor', 'auditor123', 'Auditor SUNAFIL', 'Inspector', '')")
-        c.execute("INSERT INTO usuarios VALUES ('operario', '1234', 'Operario de Campo', 'Juan Pérez (Conductor)', '+51999444555')")
+    # Tabla de Usuarios
+    c.execute('CREATE TABLE IF NOT EXISTS usuarios (username TEXT, password TEXT, rol TEXT, nombre_real TEXT)')
     
-    # Tablas Anteriores
-    c.execute('''CREATE TABLE IF NOT EXISTS iperc (id INTEGER PRIMARY KEY AUTOINCREMENT, empresa TEXT, puesto TEXT, tarea TEXT, peligro TEXT, riesgo TEXT, nivel TEXT, norma TEXT, medidas TEXT, fecha TEXT)''')
-    c.execute('''CREATE TABLE IF NOT EXISTS plan_anual (id INTEGER PRIMARY KEY AUTOINCREMENT, empresa TEXT, puesto TEXT, tipo TEXT, tema TEXT)''')
-    c.execute('''CREATE TABLE IF NOT EXISTS ats_digital (id INTEGER PRIMARY KEY AUTOINCREMENT, operario TEXT, puesto TEXT, epp_completos TEXT, latitud TEXT, longitud TEXT, firma_hash TEXT, fecha_hora TEXT)''')
-    c.execute('''CREATE TABLE IF NOT EXISTS accidentes (id INTEGER PRIMARY KEY AUTOINCREMENT, fecha_hora TEXT, operario TEXT, puesto TEXT, descripcion TEXT, gravedad TEXT, estado_investigacion TEXT)''')
+    c.execute('SELECT count(*) FROM usuarios')
+    if c.fetchone()[0] == 0:
+        c.execute("INSERT INTO usuarios VALUES ('admin', 'admin123', 'Especialista SST', 'Ing. Enrique')")
+        c.execute("INSERT INTO usuarios VALUES ('medico', 'medico123', 'Médico Ocupacional', 'Dr. Vera')")
+        c.execute("INSERT INTO usuarios VALUES ('auditor', 'auditor123', 'Auditor SUNAFIL', 'Inspector')")
+        # NUEVO USUARIO DE CAMPO
+        c.execute("INSERT INTO usuarios VALUES ('operario', '1234', 'Operario de Campo', 'Juan Pérez (Conductor)')")
     
-    # NUEVA TABLA FASE 4: VENCIMIENTOS Y PERSONAL
-    c.execute('''CREATE TABLE IF NOT EXISTS personal_sst (id INTEGER PRIMARY KEY AUTOINCREMENT, nombre TEXT, puesto TEXT, fecha_emo TEXT, fecha_sctr TEXT)''')
-    if c.execute('SELECT count(*) FROM personal_sst').fetchone()[0] == 0:
-        # Insertamos data de prueba: Uno a punto de vencer y otro vencido
-        hoy = datetime.now()
-        vence_pronto = (hoy + timedelta(days=10)).strftime("%Y-%m-%d")
-        vencido = (hoy - timedelta(days=5)).strftime("%Y-%m-%d")
-        ok = (hoy + timedelta(days=180)).strftime("%Y-%m-%d")
-        
-        c.execute("INSERT INTO personal_sst (nombre, puesto, fecha_emo, fecha_sctr) VALUES ('Juan Pérez', 'Conductor Compactadora', ?, ?)", (vence_pronto, ok))
-        c.execute("INSERT INTO personal_sst (nombre, puesto, fecha_emo, fecha_sctr) VALUES ('Luis Rojas', 'Operario Aseo', ?, ?)", (vencido, vencido))
-        c.execute("INSERT INTO personal_sst (nombre, puesto, fecha_emo, fecha_sctr) VALUES ('Ana Gómez', 'Jardinera', ?, ?)", (ok, ok))
-
+    c.execute('''CREATE TABLE IF NOT EXISTS iperc 
+                 (id INTEGER PRIMARY KEY AUTOINCREMENT, empresa TEXT, puesto TEXT, tarea TEXT, 
+                 peligro TEXT, riesgo TEXT, nivel TEXT, norma TEXT, medidas TEXT, fecha TEXT)''')
+    
+    c.execute('''CREATE TABLE IF NOT EXISTS plan_anual 
+                 (id INTEGER PRIMARY KEY AUTOINCREMENT, empresa TEXT, puesto TEXT, tipo TEXT, tema TEXT)''')
+    
+    # NUEVA TABLA: ATS DIGITAL FIRMADO EN CAMPO
+    c.execute('''CREATE TABLE IF NOT EXISTS ats_digital 
+                 (id INTEGER PRIMARY KEY AUTOINCREMENT, operario TEXT, puesto TEXT, epp_completos TEXT, 
+                 latitud TEXT, longitud TEXT, firma_hash TEXT, fecha_hora TEXT)''')
+    
     conn.commit()
     conn.close()
 
@@ -51,19 +46,12 @@ def cargar_tabla(query):
     conn.close()
     return df
 
-def guardar_ats_digital(operario, puesto, epp, lat, lon, firma):
+def guardar_ats_digital(operario, puesto, epp_completos, lat, lon, firma):
     conn = sqlite3.connect('sgi_expert.db')
     c = conn.cursor()
+    fecha_actual = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     c.execute("INSERT INTO ats_digital (operario, puesto, epp_completos, latitud, longitud, firma_hash, fecha_hora) VALUES (?,?,?,?,?,?,?)",
-              (operario, puesto, str(epp), lat, lon, firma, datetime.now().strftime("%Y-%m-%d %H:%M:%S")))
-    conn.commit()
-    conn.close()
-
-def registrar_accidente(operario, puesto, desc, grav):
-    conn = sqlite3.connect('sgi_expert.db')
-    c = conn.cursor()
-    c.execute("INSERT INTO accidentes (fecha_hora, operario, puesto, descripcion, gravedad, estado_investigacion) VALUES (?,?,?,?,?,'Pendiente (Ley 29783)')",
-              (datetime.now().strftime("%Y-%m-%d %H:%M:%S"), operario, puesto, desc, grav))
+              (operario, puesto, str(epp_completos), lat, lon, firma, fecha_actual))
     conn.commit()
     conn.close()
 
@@ -72,128 +60,138 @@ def registrar_accidente(operario, puesto, desc, grav):
 # ==========================================
 if 'logged_in' not in st.session_state:
     st.session_state.logged_in = False
+    st.session_state.rol = ""
+    st.session_state.username = ""
+    st.session_state.nombre_real = ""
 
 if not st.session_state.logged_in:
-    st.markdown("<h1 style='text-align: center;'>🔒 SGI Corporativo</h1>", unsafe_allow_html=True)
-    col1, col2, col3 = st.columns([1,2,1])
-    with col2:
-        st.info("💡 **Roles:**\n* **Admin:** `admin` / `admin123` \n* **Operario:** `operario` / `1234`")
-        with st.form("login"):
-            u = st.text_input("Usuario")
-            p = st.text_input("Contraseña", type="password")
-            if st.form_submit_button("Entrar", use_container_width=True):
-                conn = sqlite3.connect('sgi_expert.db')
-                res = conn.cursor().execute("SELECT rol, nombre_real FROM usuarios WHERE username=? AND password=?", (u, p)).fetchone()
-                if res:
-                    st.session_state.logged_in, st.session_state.rol, st.session_state.nombre_real = True, res[0], res[1]
-                    st.rerun()
-                else: st.error("Error.")
+    st.markdown("<h1 style='text-align: center;'>🔒 Acceso al SGI Corporativo</h1>", unsafe_allow_html=True)
+    with st.container():
+        col1, col2, col3 = st.columns([1,2,1])
+        with col2:
+            st.info("💡 **Prueba de Roles:**\n* **Admin:** `admin` / `admin123` \n* **Operario de campo:** `operario` / `1234`")
+            with st.form("login_form"):
+                user = st.text_input("Usuario")
+                pwd = st.text_input("Contraseña", type="password")
+                submit = st.form_submit_button("Iniciar Sesión", use_container_width=True)
+                
+                if submit:
+                    conn = sqlite3.connect('sgi_expert.db')
+                    c = conn.cursor()
+                    c.execute("SELECT rol, nombre_real FROM usuarios WHERE username=? AND password=?", (user, pwd))
+                    resultado = c.fetchone()
+                    conn.close()
+                    
+                    if resultado:
+                        st.session_state.logged_in = True
+                        st.session_state.rol = resultado[0]
+                        st.session_state.username = user
+                        st.session_state.nombre_real = resultado[1]
+                        st.rerun()
+                    else:
+                        st.error("❌ Credenciales incorrectas.")
     st.stop()
 
 # ==========================================
-# 3. INTERFACES (CERO OLVIDOS)
+# 3. INTERFACES SEGÚN EL ROL
 # ==========================================
 st.sidebar.markdown(f"### 👤 {st.session_state.nombre_real}")
-st.sidebar.info(f"Rol: {st.session_state.rol}")
-if st.sidebar.button("🚪 Salir"):
+st.sidebar.info(f"**Rol:** {st.session_state.rol}")
+if st.sidebar.button("🚪 Cerrar Sesión"):
     st.session_state.logged_in = False
     st.rerun()
 
+is_admin = st.session_state.rol == "Especialista SST"
+
 # ---------------------------------------------------------
-# INTERFAZ MÓVIL (OPERARIO)
+# INTERFAZ MÓVIL: SOLO PARA OPERARIOS DE CAMPO
 # ---------------------------------------------------------
 if st.session_state.rol == "Operario de Campo":
-    st.markdown("## 📱 Portal Operativo")
-    with st.expander("🚨 S.O.S - REPORTAR INCIDENTE", expanded=False):
-        desc = st.text_area("¿Qué sucedió?")
-        grav = st.selectbox("Gravedad", ["Incidente (Casi Accidente)", "Accidente Leve", "Accidente Incapacitante", "Accidente Mortal"])
-        if st.button("⚠️ ENVIAR ALERTA", type="primary", use_container_width=True):
-            registrar_accidente(st.session_state.nombre_real, "Conductor Compactadora", desc, grav)
-            st.success("Alerta enviada a Central.")
-            
-    st.markdown("### 📝 Firma de ATS Diario")
-    st.checkbox("👷 Casco")
-    st.checkbox("🦺 Chaleco")
-    st.checkbox("🥾 Botas")
-    firma = st.text_input("DNI para firma:")
-    if st.button("✅ Firmar e Iniciar Turno", use_container_width=True):
-        if firma:
-            guardar_ats_digital(st.session_state.nombre_real, "Conductor Compactadora", "OK", "-6.771", "-79.901", firma)
-            st.success("ATS Guardado.")
-        else: st.error("Ingrese su DNI.")
+    st.markdown("## 📱 Portal de Operaciones en Campo")
+    st.warning("Debe completar su ATS y firmar antes de iniciar su ruta.")
+    
+    st.markdown("### 1. Lectura de Peligros (Resumen IPERC)")
+    st.info("Puesto: **Conductor de Compactadora**\n* Riesgo principal: Atropello, Ruido, Riesgo Biológico.\n* Controles: Manejo a la defensiva, uso de EPP completo.")
+    
+    st.markdown("### 2. Check de EPPs Obligatorios")
+    epp_casco = st.checkbox("👷 Casco de Seguridad")
+    epp_chaleco = st.checkbox("🦺 Chaleco Reflectivo")
+    epp_guantes = st.checkbox("🧤 Guantes de Badana/Nitrilo")
+    epp_zapatos = st.checkbox("🥾 Zapatos de Seguridad (Antideslizantes)")
+    
+    st.markdown("### 3. Sello de Geolocalización (GPS)")
+    if 'gps_capturado' not in st.session_state:
+        st.session_state.gps_capturado = False
+        st.session_state.lat = ""
+        st.session_state.lon = ""
+
+    if st.button("📍 Capturar mi ubicación actual (GPS)"):
+        # Simulador de captura GPS (Lambayeque)
+        st.session_state.lat = f"-6.7{random.randint(100, 999)}"
+        st.session_state.lon = f"-79.9{random.randint(100, 999)}"
+        st.session_state.gps_capturado = True
+    
+    if st.session_state.gps_capturado:
+        st.success(f"GPS Capturado: Lat {st.session_state.lat}, Lon {st.session_state.lon}")
+    
+    st.markdown("### 4. Firma Digital")
+    firma_digital = st.text_input("Escriba su DNI para firmar digitalmente:")
+    declaracion = st.checkbox("Declaro bajo juramento que me encuentro en buenas condiciones de salud, he revisado mis EPPs y he comprendido los riesgos de mi labor hoy.")
+    
+    if st.button("✅ Firmar ATS e Iniciar Turno", use_container_width=True, type="primary"):
+        if epp_casco and epp_chaleco and epp_guantes and epp_zapatos and firma_digital and declaracion and st.session_state.gps_capturado:
+            guardar_ats_digital(st.session_state.nombre_real, "Conductor de Compactadora", "Completos", st.session_state.lat, st.session_state.lon, firma_digital)
+            st.balloons()
+            st.success("¡ATS firmado y enviado a la base de datos! Puede iniciar su turno con seguridad.")
+        else:
+            st.error("Debe marcar todos los EPPs, capturar su GPS, ingresar su DNI y aceptar la declaración jurada.")
 
 # ---------------------------------------------------------
-# INTERFAZ ESCRITORIO (ADMIN / MÉDICO)
+# INTERFAZ DE ESCRITORIO: PARA INGENIEROS / MÉDICOS / AUDITORES
 # ---------------------------------------------------------
 else:
-    st.title("🛡️ SGI 360: Mando Corporativo")
+    st.title("🛡️ SGI 360: Panel de Mando Corporativo")
     
-    # Consolidamos Plan y Legal en uno para hacer espacio a las Alertas
-    t_ats, t_iperc, t_docs, t_acc, t_alertas = st.tabs([
-        "📱 1. ATS", "👤 2. IPERC", "📚 3. Docs & Legal", "🚨 4. Accidentes", "🔔 5. Alertas (Fase 4)"
+    tab1, tab2, tab3, tab4 = st.tabs([
+        "📱 1. Control de Campo (ATS en Vivo)", 
+        "👤 2. Generador IPERC", 
+        "📚 3. Plan Anual", 
+        "⚖️ 4. Matriz Legal"
     ])
 
-    with t_ats:
-        st.dataframe(cargar_tabla("SELECT fecha_hora, operario, latitud, longitud FROM ats_digital ORDER BY id DESC"), use_container_width=True)
-
-    with t_iperc:
-        if st.session_state.rol == "Especialista SST":
-            puesto = st.text_input("Puesto", "Operario")
-            if cargar_tabla(f"SELECT COUNT(*) FROM accidentes WHERE puesto='{puesto}'").iloc[0,0] > 0:
-                st.error("⚠️ Puesto con historial de accidentes. Reevaluar IPERC (Art. 57).")
-            if st.button("🚀 Procesar IPERC"): st.success("IPERC Generado.")
-
-    with t_docs:
-        st.markdown("#### Plan Anual")
-        st.dataframe(cargar_tabla("SELECT * FROM plan_anual"), height=150, use_container_width=True)
-        st.markdown("#### Matriz Legal")
-        st.dataframe(cargar_tabla("SELECT norma, peligro, medidas FROM iperc"), height=150, use_container_width=True)
-
-    with t_acc:
-        st.dataframe(cargar_tabla("SELECT fecha_hora, operario, gravedad, estado_investigacion FROM accidentes"), use_container_width=True)
-
-    # --- MAGIA FASE 4: CERO OLVIDOS ---
-    with t_alertas:
-        st.markdown("### 🔔 Centro de Control Automático (Cero Olvidos)")
-        st.info("El sistema escanea la base de datos en tiempo real y detecta quiebres normativos antes de que ocurran.")
+    # --- NUEVO MÓDULO: CONTROL DE CAMPO EN VIVO ---
+    with tab1:
+        st.markdown("### 📡 Monitoreo de Inicio de Jornada en Tiempo Real")
+        st.info("Aquí puede verificar qué trabajadores ya firmaron su Análisis de Trabajo Seguro (ATS) desde sus celulares, junto con su sello de tiempo y ubicación GPS exacta.")
         
-        col_alerta1, col_alerta2 = st.columns(2)
+        df_ats = cargar_tabla("SELECT fecha_hora, operario, puesto, epp_completos, latitud, longitud, firma_hash as dni_firma FROM ats_digital ORDER BY id DESC")
         
-        # 1. ESCÁNER DE VENCIMIENTOS MÉDICOS Y SCTR
-        with col_alerta1:
-            st.markdown("#### 🏥 Alertas Médicas (EMO / SCTR)")
-            df_personal = cargar_tabla("SELECT nombre, puesto, fecha_emo FROM personal_sst")
-            hoy = datetime.now()
+        if not df_ats.empty:
+            st.dataframe(df_ats, use_container_width=True)
             
-            for index, row in df_personal.iterrows():
-                fecha_emo = datetime.strptime(row['fecha_emo'], "%Y-%m-%d")
-                dias_restantes = (fecha_emo - hoy).days
-                
-                if dias_restantes < 0:
-                    st.error(f"🔴 **VENCIDO:** El EMO de {row['nombre']} venció hace {abs(dias_restantes)} días.")
-                    if st.button(f"📧 Enviar Notificación RR.HH ({row['nombre']})", key=f"btn_emo_{index}"):
-                        st.toast(f"Enviando correo a Recursos Humanos y al Médico Ocupacional... 🚀", icon="📧")
-                        time.sleep(1)
-                        st.success("Correo enviado exitosamente.")
-                        
-                elif 0 <= dias_restantes <= 15:
-                    st.warning(f"🟡 **POR VENCER:** El EMO de {row['nombre']} vence en {dias_restantes} días.")
-                    if st.button(f"📲 WhatsApp a Trabajador ({row['nombre']})", key=f"btn_emo_{index}"):
-                        st.toast(f"Conectando con API de WhatsApp...", icon="📲")
-                        time.sleep(1)
-                        st.success("Mensaje programado: 'Estimado Juan, su EMO vence en 10 días. Acérquese a la clínica...'")
-        
-        # 2. ESCÁNER DE CUMPLIMIENTO LEGAL (ACCIDENTES SIN INVESTIGAR)
-        with col_alerta2:
-            st.markdown("#### 🚨 Alertas Legales (Investigaciones)")
-            df_pendientes = cargar_tabla("SELECT id, operario, fecha_hora FROM accidentes WHERE estado_investigacion LIKE '%Pendiente%'")
-            
-            if not df_pendientes.empty:
-                for index, row in df_pendientes.iterrows():
-                    st.error(f"🔴 **INFRACCIÓN LATENTE:** Accidente de {row['operario']} el {row['fecha_hora']} no ha sido investigado.")
-                    if st.button(f"📲 WhatsApp a Comité SST (Caso #{row['id']})", key=f"btn_acc_{index}"):
-                        st.toast("Notificando al Comité de Seguridad y Salud en el Trabajo...", icon="📲")
-                        time.sleep(1)
-                        st.success("El Comité ha sido convocado de urgencia vía WhatsApp.")
-            else:
-                st.success("✅ Todas las investigaciones están al día.")
+            # Botón de exportación rápida para auditoría
+            csv_ats = df_ats.to_csv(sep=';', index=False).encode('utf-8-sig')
+            st.download_button("📥 Exportar Registro de ATS Diario (Excel)", data=csv_ats, file_name=f"Registro_ATS_Diario.csv", mime='text/csv')
+        else:
+            st.warning("Aún no hay registros de trabajadores iniciando turno hoy.")
+
+    # --- MÓDULO IPERC ---
+    with tab2:
+        if is_admin:
+            st.info("Módulo restringido para el Especialista SST.")
+            puesto_ind = st.text_input("Puesto a evaluar", value="Operario de Aseo")
+            if st.button("🚀 Procesar IPERC Básico"):
+                st.success("IPERC procesado (Simulado para acortar código en esta demostración). Revisa el Plan Anual.")
+        else:
+            st.error("⛔ Acceso Denegado: Su rol no permite generar matrices.")
+
+    # --- MÓDULOS DE DB ---
+    with tab3:
+        st.markdown("### 📚 Plan Anual (Desde Base de Datos)")
+        df_plan = cargar_tabla("SELECT * FROM plan_anual")
+        st.dataframe(df_plan, use_container_width=True)
+
+    with tab4:
+        st.markdown("### ⚖️ Matriz de Trazabilidad Legal")
+        df_legal = cargar_tabla("SELECT norma, peligro, medidas FROM iperc")
+        st.dataframe(df_legal, use_container_width=True)
