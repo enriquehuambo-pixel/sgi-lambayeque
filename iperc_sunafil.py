@@ -2,9 +2,8 @@ import streamlit as st
 import pandas as pd
 from datetime import datetime
 import sqlite3
-import random
 
-st.set_page_config(page_title="SGI Expert - Fase 2 (Operaciones)", layout="wide")
+st.set_page_config(page_title="SGI Expert - Compliance Perú", layout="wide")
 
 # ==========================================
 # 1. MOTOR DE BASE DE DATOS RELACIONAL (SQL)
@@ -13,28 +12,184 @@ def init_db():
     conn = sqlite3.connect('sgi_expert.db')
     c = conn.cursor()
     # Tabla de Usuarios
-    c.execute('CREATE TABLE IF NOT EXISTS usuarios (username TEXT, password TEXT, rol TEXT, nombre_real TEXT)')
-    
+    c.execute('CREATE TABLE IF NOT EXISTS usuarios (username TEXT, password TEXT, rol TEXT)')
+    # Insertar usuarios por defecto si la tabla está vacía
     c.execute('SELECT count(*) FROM usuarios')
     if c.fetchone()[0] == 0:
-        c.execute("INSERT INTO usuarios VALUES ('admin', 'admin123', 'Especialista SST', 'Ing. Enrique')")
-        c.execute("INSERT INTO usuarios VALUES ('medico', 'medico123', 'Médico Ocupacional', 'Dr. Vera')")
-        c.execute("INSERT INTO usuarios VALUES ('auditor', 'auditor123', 'Auditor SUNAFIL', 'Inspector')")
-        # NUEVO USUARIO DE CAMPO
-        c.execute("INSERT INTO usuarios VALUES ('operario', '1234', 'Operario de Campo', 'Juan Pérez (Conductor)')")
+        c.execute("INSERT INTO usuarios VALUES ('admin', 'admin123', 'Especialista SST')")
+        c.execute("INSERT INTO usuarios VALUES ('medico', 'medico123', 'Médico Ocupacional')")
+        c.execute("INSERT INTO usuarios VALUES ('auditor', 'auditor123', 'Auditor SUNAFIL')")
     
+    # Tabla de Historial IPERC
     c.execute('''CREATE TABLE IF NOT EXISTS iperc 
                  (id INTEGER PRIMARY KEY AUTOINCREMENT, empresa TEXT, puesto TEXT, tarea TEXT, 
                  peligro TEXT, riesgo TEXT, nivel TEXT, norma TEXT, medidas TEXT, fecha TEXT)''')
     
+    # Tabla de Plan Anual
     c.execute('''CREATE TABLE IF NOT EXISTS plan_anual 
                  (id INTEGER PRIMARY KEY AUTOINCREMENT, empresa TEXT, puesto TEXT, tipo TEXT, tema TEXT)''')
     
-    # NUEVA TABLA: ATS DIGITAL FIRMADO EN CAMPO
-    c.execute('''CREATE TABLE IF NOT EXISTS ats_digital 
-                 (id INTEGER PRIMARY KEY AUTOINCREMENT, operario TEXT, puesto TEXT, epp_completos TEXT, 
-                 latitud TEXT, longitud TEXT, firma_hash TEXT, fecha_hora TEXT)''')
-    
+    conn.commit()
+    conn.close()
+
+# Inicializar la base de datos al arrancar
+init_db()
+
+# Funciones de persistencia
+def guardar_iperc_db(empresa, puesto, tarea, peligro, riesgo, nivel, norma, medidas):
+    conn = sqlite3.connect('sgi_expert.db')
+    c = conn.cursor()
+    fecha_actual = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    c.execute("INSERT INTO iperc (empresa, puesto, tarea, peligro, riesgo, nivel, norma, medidas, fecha) VALUES (?,?,?,?,?,?,?,?,?)",
+              (empresa, puesto, tarea, peligro, riesgo, nivel, norma, medidas, fecha_actual))
+    conn.commit()
+    conn.close()
+
+def guardar_plan_db(empresa, puesto, tipo, tema):
+    conn = sqlite3.connect('sgi_expert.db')
+    c = conn.cursor()
+    c.execute("INSERT INTO plan_anual (empresa, puesto, tipo, tema) VALUES (?,?,?,?)", (empresa, puesto, tipo, tema))
+    conn.commit()
+    conn.close()
+
+def cargar_tabla(query):
+    conn = sqlite3.connect('sgi_expert.db')
+    df = pd.read_sql_query(query, conn)
+    conn.close()
+    return df
+
+# ==========================================
+# 2. SISTEMA DE AUTENTICACIÓN Y ROLES (LOGIN)
+# ==========================================
+if 'logged_in' not in st.session_state:
+    st.session_state.logged_in = False
+    st.session_state.rol = ""
+    st.session_state.username = ""
+
+if not st.session_state.logged_in:
+    st.markdown("<h1 style='text-align: center;'>🔒 Acceso al SGI Corporativo</h1>", unsafe_allow_html=True)
+    with st.form("login_form"):
+        st.write("Ingrese sus credenciales para acceder al sistema:")
+        user = st.text_input("Usuario")
+        pwd = st.text_input("Contraseña", type="password")
+        submit = st.form_submit_button("Iniciar Sesión")
+        
+        if submit:
+            conn = sqlite3.connect('sgi_expert.db')
+            c = conn.cursor()
+            c.execute("SELECT rol FROM usuarios WHERE username=? AND password=?", (user, pwd))
+            resultado = c.fetchone()
+            conn.close()
+            
+            if resultado:
+                st.session_state.logged_in = True
+                st.session_state.rol = resultado[0]
+                st.session_state.username = user
+                st.rerun()
+            else:
+                st.error("❌ Usuario o contraseña incorrectos.")
+    st.stop() # Detiene la ejecución aquí si no está logueado
+
+# ==========================================
+# 3. INTERFAZ PRINCIPAL DEL SISTEMA (LOGUEADO)
+# ==========================================
+def calcular_nivel(valor):
+    if valor >= 25: return "IT"
+    if valor >= 17: return "IM"
+    if valor >= 9:  return "MO"
+    if valor >= 5:  return "TO"
+    return "TR"
+
+st.sidebar.markdown(f"### 👤 Usuario: {st.session_state.username}")
+st.sidebar.info(f"**Rol:** {st.session_state.rol}")
+if st.sidebar.button("🚪 Cerrar Sesión"):
+    st.session_state.logged_in = False
+    st.rerun()
+
+st.title("🛡️ SGI 360: Operaciones, Base de Datos y Cumplimiento")
+
+# Filtro de seguridad por Rol
+is_admin = st.session_state.rol == "Especialista SST"
+
+st.markdown("### 📝 Datos de la Entidad")
+col_h1, col_h2 = st.columns(2)
+empresa = col_h1.text_input("Razón Social", value="Municipalidad Provincial de Lambayeque", disabled=not is_admin)
+sector = col_h2.selectbox("Sector Económico", ["Obreros Municipales (D.S. 017-2017-TR)", "General / Administrativo (Ley 29783)"], disabled=not is_admin)
+
+# 4. SISTEMA DE PESTAÑAS (MÓDULOS)
+tab1, tab2, tab3, tab4 = st.tabs(["👤 1. Generador IPERC", "📚 2. Plan Anual (DB)", "⚖️ 3. Matriz Legal (DB)", "📊 4. Dashboard de Control"])
+
+# --- MÓDULO 1: GENERACIÓN (Solo para Especialista SST) ---
+with tab1:
+    if is_admin:
+        st.info("Al procesar el IPERC, los datos se guardarán permanentemente en la Base de Datos SQL (sgi_expert.db).")
+        col_i1, col_i2, col_i3 = st.columns(3)
+        puesto_ind = col_i1.text_input("Puesto a evaluar", value="Operario de Aseo")
+        actividad_ind = col_i2.text_input("Actividad", value="Limpieza")
+        expuestos_ind = col_i3.number_input("Expuestos", min_value=1, value=60)
+
+        if st.button("🚀 Procesar IPERC y Guardar en BD"):
+            # Simulación de los peligros principales para el MVP
+            datos_peligros = [
+                {"TAREA": "Labores a la intemperie", "P": "Radiación solar y calor.", "R": "Estrés térmico.", "L": "Ley 30102", "S": 2, "M": "Bloqueador FPS 50+, pausas activas.", "CAP": "Prevención de estrés térmico.", "DOC": "Registro de entrega de EPP."},
+                {"TAREA": "Manipulación de Cargas", "P": "Levantamiento manual.", "R": "Sobreesfuerzo biomecánico.", "L": "R.M. 375-2008-TR", "S": 2, "M": "Higiene postural.", "CAP": "Higiene postural.", "DOC": "Evaluación Ergonómica."},
+                {"TAREA": "Dinámica laboral", "P": "Insinuaciones sexuales no deseadas.", "R": "Hostigamiento Sexual.", "L": "Ley N° 27942", "S": 3, "M": "Canales de denuncia.", "CAP": "Prevención del Hostigamiento Sexual.", "DOC": "Actas del Comité."}
+            ]
+            
+            # Índices fijos para demostración
+            idx_a, idx_b, idx_c, idx_d = 3, 2, 1, 3
+            ip_inicial = idx_a + idx_b + idx_c + idx_d
+            
+            for d in datos_peligros:
+                r_ini = ip_inicial * d["S"]
+                n_ini = calcular_nivel(r_ini)
+                
+                # 1. Guardar en SQL: Tabla IPERC
+                guardar_iperc_db(empresa, puesto_ind, d["TAREA"], d["P"], d["R"], n_ini, d["L"], d["M"])
+                # 2. Guardar en SQL: Tabla Plan Anual
+                guardar_plan_db(empresa, puesto_ind, "Capacitación", d["CAP"])
+                guardar_plan_db(empresa, puesto_ind, "Documento/Registro", d["DOC"])
+
+            st.success(f"✅ ¡IPERC de {puesto_ind} guardado permanentemente en la Base de Datos!")
+    else:
+        st.error("⛔ Acceso Denegado: Su rol de '{}' no tiene permisos para generar nuevas matrices. Diríjase a las pestañas de Plan Anual o Matriz Legal para auditar.".format(st.session_state.rol))
+
+# --- MÓDULO 2 y 3: LECTURA DESDE LA BASE DE DATOS (Todos los roles) ---
+with tab2:
+    st.markdown("### 📚 Plan Anual Documentario y de Capacitaciones (Consultado desde SQL)")
+    df_plan = cargar_tabla(f"SELECT puesto, tipo, tema FROM plan_anual WHERE empresa='{empresa}'")
+    if not df_plan.empty:
+        df_plan = df_plan.drop_duplicates().reset_index(drop=True)
+        st.dataframe(df_plan, use_container_width=True)
+    else:
+        st.warning("La base de datos está vacía para esta entidad.")
+
+with tab3:
+    st.markdown("### ⚖️ Matriz de Trazabilidad Legal (Consultado desde SQL)")
+    df_legal = cargar_tabla(f"SELECT norma, peligro, medidas, nivel FROM iperc WHERE empresa='{empresa}'")
+    if not df_legal.empty:
+        df_legal = df_legal.drop_duplicates(subset=['norma', 'peligro']).reset_index(drop=True)
+        df_legal['ESTADO (Auditoría)'] = "En Proceso"
+        st.dataframe(df_legal, use_container_width=True)
+    else:
+        st.warning("Aún no hay normativas registradas en la base de datos.")
+
+# --- MÓDULO 4: DASHBOARD (Solo Lectura interactiva) ---
+with tab4:
+    st.markdown("### 📊 Panel de Control y Nivel de Cumplimiento")
+    col_d1, col_d2 = st.columns(2)
+    with col_d1:
+        st.markdown("#### 📁 Documentos de Gestión Maestros")
+        doc_1 = st.checkbox("Plan Anual de Seguridad y Salud en el Trabajo (PASST) Aprobado", disabled=not is_admin)
+        doc_2 = st.checkbox("Plan Anual de Capacitaciones (PAC) Aprobado", disabled=not is_admin)
+        doc_3 = st.checkbox("Política de Seguridad y Salud en el Trabajo (Firmada)", disabled=not is_admin)
+    with col_d2:
+        st.markdown("#### ⚙️ Auditoría de la Base de Datos")
+        total_ipercs = cargar_tabla("SELECT COUNT(DISTINCT puesto) FROM iperc").iloc[0,0]
+        st.metric(label="Puestos de Trabajo Evaluados y Guardados", value=total_ipercs)
+        
+        total_leyes = len(df_legal) if not df_legal.empty else 0
+        st.metric(label="Normativas Legales en Trazabilidad", value=total_leyes)    
     conn.commit()
     conn.close()
 
